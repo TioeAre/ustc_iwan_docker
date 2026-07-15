@@ -181,6 +181,8 @@ docker build -f Dockerfile -t ustc-iwan-client-oidc .
 
 ```bash
 docker run -it \
+  --sig-proxy=false \
+  --detach-keys=ctrl-c \
   --name ustc-iwan \
   --restart unless-stopped \
   --cap-add NET_ADMIN \
@@ -195,6 +197,8 @@ docker run -it \
 ```
 
 如果 `/config/servers.json` 不存在，容器会先输出 OIDC 登录链接。按前文流程在同一交互式命令行完成浏览器认证后，把回调 URL 粘贴回终端。随后容器会列出线路，选择一次后会保存该线路编号。配置会保存到宿主机的：
+
+`--detach-keys=ctrl-c` 会让 Docker CLI 把 `Ctrl-C` 识别为分离快捷键，而不是把这个终端控制字符发送给容器；`--sig-proxy=false` 同时禁止转发 Docker CLI 收到的信号。完成登录并看到 `[WATCHDOG] healthy` 后，可以按 `Ctrl-C` 退出当前附着终端，隧道仍会在容器内运行。需要真正停止隧道时，请显式执行 `docker stop ustc-iwan`。
 
 ```text
 ./data/iwan/servers.json
@@ -213,6 +217,13 @@ docker start ustc-iwan
 docker restart ustc-iwan
 ```
 
+使用 Docker Compose 时建议后台启动，避免关闭日志终端时影响服务：
+
+```bash
+docker compose up -d
+docker compose logs -f --tail 100 --timestamps iwan
+```
+
 测试宿主机访问测试：
 
 ```bash
@@ -223,10 +234,21 @@ curl --proxy http://127.0.0.1:8888 https://api.llm.ustc.edu.cn
 排查日志：
 
 ```bash
-docker logs ustc-iwan
+docker logs -f --tail 100 --timestamps ustc-iwan
 ```
 
-默认禁用 IPv6，避免 TUN 刚启动时产生 IPv6 链路本地流量影响 iWAN 数据面。端口只绑定到 `127.0.0.1`，不会暴露到局域网。
+连接可用性以 HTTP 代理访问 `https://api.llm.ustc.edu.cn` 为准。默认每 5 秒检查一次，连续失败两次会自动重建 iWAN 隧道和 3proxy；正常状态每 60 秒记录一条摘要。可以通过环境变量调整：
+
+| 环境变量 | 默认值 | 说明 |
+|---|---:|---|
+| `IWAN_HEALTHCHECK_URL` | `https://api.llm.ustc.edu.cn` | 端到端代理检查地址。 |
+| `IWAN_HEALTHCHECK_TIMEOUT` | `5` | 单次检查最长秒数。 |
+| `IWAN_WATCHDOG_INTERVAL` | `5` | 两次检查之间的秒数。 |
+| `IWAN_WATCHDOG_RETRIES` | `2` | 触发重连前允许的连续失败次数。 |
+| `IWAN_RECONNECT_DELAY` | `2` | 重建连接前等待的秒数。 |
+| `IWAN_STATUS_LOG_INTERVAL` | `60` | 正常状态摘要的秒数间隔。 |
+
+默认禁用 IPv6，避免 TUN 刚启动时产生 IPv6 链路本地流量影响 iWAN 连接。
 
 ## 手动客户端
 

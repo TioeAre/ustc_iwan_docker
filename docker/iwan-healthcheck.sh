@@ -2,8 +2,8 @@
 set -eu
 
 IWAN_TUN="${IWAN_TUN:-iwan0}"
-IWAN_HEALTHCHECK_URL="${IWAN_HEALTHCHECK_URL:-http://www.gstatic.com/generate_204}"
-IWAN_HEALTHCHECK_TIMEOUT="${IWAN_HEALTHCHECK_TIMEOUT:-1}"
+IWAN_HEALTHCHECK_URL="${IWAN_HEALTHCHECK_URL:-https://api.llm.ustc.edu.cn}"
+IWAN_HEALTHCHECK_TIMEOUT="${IWAN_HEALTHCHECK_TIMEOUT:-5}"
 
 has_process() {
     name="$1"
@@ -49,20 +49,15 @@ listens_on 8888 || {
     exit 1
 }
 
-check_url_with_proxy() {
-    name="$1"
-    proxy="$2"
-
-    output="$(curl -fsS --max-time "$IWAN_HEALTHCHECK_TIMEOUT" --proxy "$proxy" "$IWAN_HEALTHCHECK_URL" 2>&1)" || {
-        echo "$name proxy cannot access $IWAN_HEALTHCHECK_URL via $proxy" >&2
-        echo "$output" >&2
-        return 1
-    }
+output="$(
+    curl -sS \
+        --output /dev/null \
+        --connect-timeout "$IWAN_HEALTHCHECK_TIMEOUT" \
+        --max-time "$IWAN_HEALTHCHECK_TIMEOUT" \
+        --proxy http://127.0.0.1:8888 \
+        "$IWAN_HEALTHCHECK_URL" 2>&1
+)" || {
+    echo "HTTP proxy cannot access $IWAN_HEALTHCHECK_URL via http://127.0.0.1:8888" >&2
+    echo "$output" >&2
+    exit 1
 }
-
-failed=0
-
-check_url_with_proxy "HTTP" "http://127.0.0.1:8888" || failed=1
-check_url_with_proxy "SOCKS5" "socks5h://127.0.0.1:1080" || failed=1
-
-exit "$failed"

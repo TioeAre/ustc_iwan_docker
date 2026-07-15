@@ -2,7 +2,7 @@ use super::{crypto, protocol, route, tun};
 use anyhow::{Context, Result};
 use std::net::{ToSocketAddrs, UdpSocket};
 use std::os::fd::RawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -57,17 +57,33 @@ pub fn run_pump(
     let xk_recv = xk.to_vec();
 
     let rk = running.clone();
+    let missed_pongs = Arc::new(AtomicUsize::new(0));
+    let keepalive_missed_pongs = missed_pongs.clone();
     let tk = std::thread::spawn(move || {
-        println!("[KEEPALIVE] started");
-        let h = protocol::pkhdr(protocol::PT_DATA_ENC, enc, sid, tok);
-        let pkt = protocol::data_pkt(&h, &[]);
+        const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
+        const MAX_MISSED_PONGS: usize = 2;
+
+        println!(
+            "[KEEPALIVE] started interval={}s max_missed={MAX_MISSED_PONGS}",
+            KEEPALIVE_INTERVAL.as_secs()
+        );
+        let h = protocol::pkhdr(protocol::PT_PING_REQ, 0, 0xFFFF, 0xFFFF_FFFF);
+        let pkt = protocol::ctrl_pkt(&h, &[]);
         loop {
-            if sock_keepalive.send(&pkt).is_err() {
-                eprintln!("[KEEPALIVE] send failed");
+            let missed = keepalive_missed_pongs.fetch_add(1, Ordering::Relaxed);
+            if missed >= MAX_MISSED_PONGS {
+                eprintln!("[KEEPALIVE] pong timeout missed={missed}");
                 rk.store(false, Ordering::Relaxed);
                 break;
             }
-            for _ in 0..100 {
+
+            if let Err(e) = sock_keepalive.send(&pkt) {
+                eprintln!("[KEEPALIVE] send failed: {e}");
+                rk.store(false, Ordering::Relaxed);
+                break;
+            }
+
+            for _ in 0..25 {
                 if !rk.load(Ordering::Relaxed) {
                     println!("[KEEPALIVE] stopped");
                     return;
@@ -114,6 +130,7 @@ pub fn run_pump(
     });
 
     let r2 = running.clone();
+    let recv_missed_pongs = missed_pongs.clone();
     let t2 = std::thread::spawn(move || {
         let mut buf = vec![0u8; 65535];
         println!("[UDP→TUN] started");
@@ -134,7 +151,10 @@ pub fn run_pump(
                         r2.store(false, Ordering::Relaxed);
                         break;
                     } else if t == protocol::PT_PING_RSP && protocol::verify_sig(&buf[..n]) {
-                        // Keepalive response; the data plane only needs it to keep NAT/session state fresh.
+                        let missed = recv_missed_pongs.swap(0, Ordering::Relaxed);
+                        if missed > 1 {
+                            println!("[KEEPALIVE] pong recovered after {missed} attempts");
+                        }
                     }
                 }
                 Ok(_) => {}

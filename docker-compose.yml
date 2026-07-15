@@ -20,5 +20,11 @@ services:
       - "127.0.0.1:8888:8888"
     environment:
       IWAN_PROXY_CIDR: "0.0.0.0/0"
+      IWAN_HEALTHCHECK_URL: "https://api.llm.ustc.edu.cn"
+      IWAN_HEALTHCHECK_TIMEOUT: "5"
+      IWAN_WATCHDOG_INTERVAL: "5"
+      IWAN_WATCHDOG_RETRIES: "2"
+      IWAN_RECONNECT_DELAY: "2"
+      IWAN_STATUS_LOG_INTERVAL: "60"
     volumes:
       - ./data/iwan:/config

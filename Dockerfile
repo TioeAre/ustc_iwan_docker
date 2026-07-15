@@ -4,6 +4,9 @@ FROM rust:1-bookworm AS builder
 
 ARG TARGETARCH
 ARG ZIG_VERSION=0.13.0
+ARG RUSTUP_DIST_SERVER=https://static.rust-lang.org
+
+ENV RUSTUP_DIST_SERVER="${RUSTUP_DIST_SERVER}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
@@ -61,7 +64,7 @@ RUN chmod +x /usr/local/bin/iwan-client-oidc /usr/local/bin/3proxy /usr/local/bi
 
 VOLUME ["/config"]
 EXPOSE 1080 8888
-HEALTHCHECK --interval=150s --timeout=5s --start-period=90s --retries=3 CMD iwan-healthcheck
+HEALTHCHECK --interval=15s --timeout=7s --start-period=30s --retries=2 CMD iwan-healthcheck
 
 ENTRYPOINT ["iwan-entrypoint"]
 CMD ["auto"]
