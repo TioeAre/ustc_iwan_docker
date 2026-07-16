@@ -3,7 +3,7 @@ set -eu
 
 IWAN_TUN="${IWAN_TUN:-iwan0}"
 IWAN_HEALTHCHECK_URL="${IWAN_HEALTHCHECK_URL:-https://api.llm.ustc.edu.cn}"
-IWAN_HEALTHCHECK_TIMEOUT="${IWAN_HEALTHCHECK_TIMEOUT:-5}"
+IWAN_HEALTHCHECK_TIMEOUT="${IWAN_HEALTHCHECK_TIMEOUT:-10}"
 
 has_process() {
     name="$1"
@@ -51,6 +51,7 @@ listens_on 8888 || {
 
 output="$(
     curl -sS \
+        --head \
         --output /dev/null \
         --connect-timeout "$IWAN_HEALTHCHECK_TIMEOUT" \
         --max-time "$IWAN_HEALTHCHECK_TIMEOUT" \

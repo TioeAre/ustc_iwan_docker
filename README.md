@@ -237,13 +237,15 @@ curl --proxy http://127.0.0.1:8888 https://api.llm.ustc.edu.cn
 docker logs -f --tail 100 --timestamps ustc-iwan
 ```
 
-连接可用性以 HTTP 代理访问 `https://api.llm.ustc.edu.cn` 为准。默认每 5 秒检查一次，连续失败两次会自动重建 iWAN 隧道和 3proxy；正常状态每 60 秒记录一条摘要。可以通过环境变量调整：
+连接可用性以 HTTP 代理访问 `https://api.llm.ustc.edu.cn` 为准。使用 `curl --head --proxy http://127.0.0.1:8888`。HTTP 状态码本身不决定健康状态；只有 DNS、代理连接、TLS 或传输失败才算失败。
+
+watchdog 默认每 15 秒检查一次，单次最多等待 10 秒，连续失败两次会自动重建 iWAN 隧道和 3proxy。网络完全失联时，Rust 客户端还会每 5 秒通过 iWAN 协议发送一个很小的 `PT_PING_REQ`，连续丢失 3 个响应后退出当前隧道，通常会比 HTTP 检查更快触发重连。Docker 自身的健康状态每 60 秒检查一次，正常状态每 60 秒记录一条摘要。可以通过环境变量调整：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---:|---|
 | `IWAN_HEALTHCHECK_URL` | `https://api.llm.ustc.edu.cn` | 端到端代理检查地址。 |
-| `IWAN_HEALTHCHECK_TIMEOUT` | `5` | 单次检查最长秒数。 |
-| `IWAN_WATCHDOG_INTERVAL` | `5` | 两次检查之间的秒数。 |
+| `IWAN_HEALTHCHECK_TIMEOUT` | `10` | 单次 HTTP 检查最长秒数。 |
+| `IWAN_WATCHDOG_INTERVAL` | `15` | 两次 HTTP 检查之间的秒数。 |
 | `IWAN_WATCHDOG_RETRIES` | `2` | 触发重连前允许的连续失败次数。 |
 | `IWAN_RECONNECT_DELAY` | `2` | 重建连接前等待的秒数。 |
 | `IWAN_STATUS_LOG_INTERVAL` | `60` | 正常状态摘要的秒数间隔。 |

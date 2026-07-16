@@ -64,7 +64,7 @@ RUN chmod +x /usr/local/bin/iwan-client-oidc /usr/local/bin/3proxy /usr/local/bi
 
 VOLUME ["/config"]
 EXPOSE 1080 8888
-HEALTHCHECK --interval=15s --timeout=7s --start-period=30s --retries=2 CMD iwan-healthcheck
+HEALTHCHECK --interval=60s --timeout=12s --start-period=30s --retries=2 CMD iwan-healthcheck
 
 ENTRYPOINT ["iwan-entrypoint"]
 CMD ["auto"]

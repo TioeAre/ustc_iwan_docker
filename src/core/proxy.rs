@@ -61,7 +61,7 @@ pub fn run_pump(
     let keepalive_missed_pongs = missed_pongs.clone();
     let tk = std::thread::spawn(move || {
         const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
-        const MAX_MISSED_PONGS: usize = 2;
+        const MAX_MISSED_PONGS: usize = 3;
 
         println!(
             "[KEEPALIVE] started interval={}s max_missed={MAX_MISSED_PONGS}",
