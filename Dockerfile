@@ -58,8 +58,9 @@ COPY --from=proxy-builder /out/3proxy /usr/local/bin/3proxy
 COPY docker/3proxy.cfg /etc/3proxy/3proxy.cfg
 COPY docker/iwan-entrypoint.sh /usr/local/bin/iwan-entrypoint
 COPY docker/iwan-healthcheck.sh /usr/local/bin/iwan-healthcheck
+COPY docker/iwan-connectivity-check.sh /usr/local/bin/iwan-connectivity-check
 
-RUN chmod +x /usr/local/bin/iwan-client-oidc /usr/local/bin/3proxy /usr/local/bin/iwan-entrypoint /usr/local/bin/iwan-healthcheck \
+RUN chmod +x /usr/local/bin/iwan-client-oidc /usr/local/bin/3proxy /usr/local/bin/iwan-entrypoint /usr/local/bin/iwan-healthcheck /usr/local/bin/iwan-connectivity-check \
     && mkdir -p /config
 
 VOLUME ["/config"]

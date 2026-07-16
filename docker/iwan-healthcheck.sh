@@ -2,8 +2,6 @@
 set -eu
 
 IWAN_TUN="${IWAN_TUN:-iwan0}"
-IWAN_HEALTHCHECK_URL="${IWAN_HEALTHCHECK_URL:-https://api.llm.ustc.edu.cn}"
-IWAN_HEALTHCHECK_TIMEOUT="${IWAN_HEALTHCHECK_TIMEOUT:-10}"
 
 has_process() {
     name="$1"
@@ -46,19 +44,5 @@ listens_on 1080 || {
 
 listens_on 8888 || {
     echo "HTTP proxy port 8888 is not listening" >&2
-    exit 1
-}
-
-output="$(
-    curl -sS \
-        --head \
-        --output /dev/null \
-        --connect-timeout "$IWAN_HEALTHCHECK_TIMEOUT" \
-        --max-time "$IWAN_HEALTHCHECK_TIMEOUT" \
-        --proxy http://127.0.0.1:8888 \
-        "$IWAN_HEALTHCHECK_URL" 2>&1
-)" || {
-    echo "HTTP proxy cannot access $IWAN_HEALTHCHECK_URL via http://127.0.0.1:8888" >&2
-    echo "$output" >&2
     exit 1
 }

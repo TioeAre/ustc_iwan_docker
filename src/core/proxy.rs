@@ -59,6 +59,8 @@ pub fn run_pump(
     let rk = running.clone();
     let missed_pongs = Arc::new(AtomicUsize::new(0));
     let keepalive_missed_pongs = missed_pongs.clone();
+    let ping_unhealthy = Arc::new(AtomicBool::new(false));
+    let keepalive_ping_unhealthy = ping_unhealthy.clone();
     let tk = std::thread::spawn(move || {
         const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
         const MAX_MISSED_PONGS: usize = 3;
@@ -71,16 +73,15 @@ pub fn run_pump(
         let pkt = protocol::ctrl_pkt(&h, &[]);
         loop {
             let missed = keepalive_missed_pongs.fetch_add(1, Ordering::Relaxed);
-            if missed >= MAX_MISSED_PONGS {
+            if missed >= MAX_MISSED_PONGS && !keepalive_ping_unhealthy.swap(true, Ordering::Relaxed)
+            {
                 eprintln!("[KEEPALIVE] pong timeout missed={missed}");
-                rk.store(false, Ordering::Relaxed);
-                break;
             }
 
             if let Err(e) = sock_keepalive.send(&pkt) {
-                eprintln!("[KEEPALIVE] send failed: {e}");
-                rk.store(false, Ordering::Relaxed);
-                break;
+                if !keepalive_ping_unhealthy.swap(true, Ordering::Relaxed) {
+                    eprintln!("[KEEPALIVE] send failed: {e}");
+                }
             }
 
             for _ in 0..25 {
@@ -91,7 +92,6 @@ pub fn run_pump(
                 std::thread::sleep(Duration::from_millis(200));
             }
         }
-        println!("[KEEPALIVE] stopped");
     });
 
     let r1 = running.clone();
@@ -131,6 +131,7 @@ pub fn run_pump(
 
     let r2 = running.clone();
     let recv_missed_pongs = missed_pongs.clone();
+    let recv_ping_unhealthy = ping_unhealthy.clone();
     let t2 = std::thread::spawn(move || {
         let mut buf = vec![0u8; 65535];
         println!("[UDP→TUN] started");
@@ -152,7 +153,7 @@ pub fn run_pump(
                         break;
                     } else if t == protocol::PT_PING_RSP && protocol::verify_sig(&buf[..n]) {
                         let missed = recv_missed_pongs.swap(0, Ordering::Relaxed);
-                        if missed > 1 {
+                        if recv_ping_unhealthy.swap(false, Ordering::Relaxed) {
                             println!("[KEEPALIVE] pong recovered after {missed} attempts");
                         }
                     }

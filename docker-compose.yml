@@ -23,7 +23,7 @@ services:
       IWAN_HEALTHCHECK_URL: "https://api.llm.ustc.edu.cn"
       IWAN_HEALTHCHECK_TIMEOUT: "10"
       IWAN_WATCHDOG_INTERVAL: "15"
-      IWAN_WATCHDOG_RETRIES: "2"
+      IWAN_WATCHDOG_FAILURE_WINDOW: "120"
       IWAN_RECONNECT_DELAY: "2"
       IWAN_STATUS_LOG_INTERVAL: "60"
     volumes:

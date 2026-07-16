@@ -11,7 +11,7 @@ IWAN_PROXY_DOMAIN="${IWAN_PROXY_DOMAIN:-}"
 IWAN_ENCRYPT="${IWAN_ENCRYPT:-1}"
 IWAN_HEALTHCHECK_URL="${IWAN_HEALTHCHECK_URL:-https://api.llm.ustc.edu.cn}"
 IWAN_WATCHDOG_INTERVAL="${IWAN_WATCHDOG_INTERVAL:-15}"
-IWAN_WATCHDOG_RETRIES="${IWAN_WATCHDOG_RETRIES:-2}"
+IWAN_WATCHDOG_FAILURE_WINDOW="${IWAN_WATCHDOG_FAILURE_WINDOW:-120}"
 IWAN_RECONNECT_DELAY="${IWAN_RECONNECT_DELAY:-2}"
 IWAN_STATUS_LOG_INTERVAL="${IWAN_STATUS_LOG_INTERVAL:-60}"
 THREEPROXY_CONFIG="${THREEPROXY_CONFIG:-/etc/3proxy/3proxy.cfg}"
@@ -167,8 +167,8 @@ reap_proxy() {
 }
 
 monitor_connection() {
-    failures=0
     ever_healthy=0
+    failure_started=""
     last_status_log="$(date +%s)"
 
     while true; do
@@ -183,27 +183,44 @@ monitor_connection() {
             return 1
         fi
 
-        if health_output="$(iwan-healthcheck 2>&1)"; then
-            if [ "$failures" -gt 0 ]; then
-                log "WATCHDOG" "recovered url=$IWAN_HEALTHCHECK_URL"
+        if ! local_health="$(iwan-healthcheck 2>&1)"; then
+            local_health="$(printf '%s' "$local_health" | tr '\n' ' ')"
+            log "WATCHDOG" "local health failed reason=$local_health"
+            reconnect_reason="local health check failed: $local_health"
+            return 1
+        fi
+
+        probe_started="$(date +%s)"
+        if connectivity_output="$(iwan-connectivity-check 2>&1)"; then
+            now="$(date +%s)"
+            if [ -n "$failure_started" ]; then
+                failure_elapsed=$((now - failure_started))
+                log "WATCHDOG" "connectivity recovered failed_for=${failure_elapsed}s $connectivity_output"
+                last_status_log="$now"
             elif [ "$ever_healthy" -eq 0 ]; then
-                log "WATCHDOG" "healthy url=$IWAN_HEALTHCHECK_URL"
+                log "WATCHDOG" "connectivity healthy $connectivity_output"
+                last_status_log="$now"
             fi
-            failures=0
+            failure_started=""
             ever_healthy=1
         else
-            failures=$((failures + 1))
-            health_output="$(printf '%s' "$health_output" | tr '\n' ' ')"
-            log "WATCHDOG" "failed attempt=$failures/$IWAN_WATCHDOG_RETRIES reason=$health_output"
-            if [ "$failures" -ge "$IWAN_WATCHDOG_RETRIES" ]; then
-                reconnect_reason="endpoint watchdog failed $failures times"
+            now="$(date +%s)"
+            if [ -z "$failure_started" ]; then
+                failure_started="$probe_started"
+            fi
+            failure_elapsed=$((now - failure_started))
+            connectivity_output="$(printf '%s' "$connectivity_output" | tr '\n' ' ')"
+            log "WATCHDOG" "connectivity failed failed_for=${failure_elapsed}s restart_after=${IWAN_WATCHDOG_FAILURE_WINDOW}s $connectivity_output"
+
+            if [ "$failure_elapsed" -ge "$IWAN_WATCHDOG_FAILURE_WINDOW" ]; then
+                reconnect_reason="HTTP proxy connectivity failed for ${failure_elapsed}s"
                 return 1
             fi
         fi
 
         now="$(date +%s)"
-        if [ "$failures" -eq 0 ] && [ $((now - last_status_log)) -ge "$IWAN_STATUS_LOG_INTERVAL" ]; then
-            log "WATCHDOG" "healthy url=$IWAN_HEALTHCHECK_URL"
+        if [ -z "$failure_started" ] && [ $((now - last_status_log)) -ge "$IWAN_STATUS_LOG_INTERVAL" ]; then
+            log "WATCHDOG" "connectivity healthy $connectivity_output"
             last_status_log="$now"
         fi
         sleep "$IWAN_WATCHDOG_INTERVAL"

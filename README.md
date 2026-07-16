@@ -198,7 +198,7 @@ docker run -it \
 
 如果 `/config/servers.json` 不存在，容器会先输出 OIDC 登录链接。按前文流程在同一交互式命令行完成浏览器认证后，把回调 URL 粘贴回终端。随后容器会列出线路，选择一次后会保存该线路编号。配置会保存到宿主机的：
 
-`--detach-keys=ctrl-c` 会让 Docker CLI 把 `Ctrl-C` 识别为分离快捷键，而不是把这个终端控制字符发送给容器；`--sig-proxy=false` 同时禁止转发 Docker CLI 收到的信号。完成登录并看到 `[WATCHDOG] healthy` 后，可以按 `Ctrl-C` 退出当前附着终端，隧道仍会在容器内运行。需要真正停止隧道时，请显式执行 `docker stop ustc-iwan`。
+`--detach-keys=ctrl-c` 会让 Docker CLI 把 `Ctrl-C` 识别为分离快捷键，而不是把这个终端控制字符发送给容器；`--sig-proxy=false` 同时禁止转发 Docker CLI 收到的信号。完成登录并看到 `[WATCHDOG] connectivity healthy` 后，可以按 `Ctrl-C` 退出当前附着终端，隧道仍会在容器内运行。需要真正停止隧道时，请显式执行 `docker stop ustc-iwan`。
 
 ```text
 ./data/iwan/servers.json
@@ -235,18 +235,20 @@ curl --proxy http://127.0.0.1:8888 https://api.llm.ustc.edu.cn
 
 ```bash
 docker logs -f --tail 100 --timestamps ustc-iwan
+docker exec ustc-iwan iwan-healthcheck
+docker exec ustc-iwan iwan-connectivity-check
 ```
 
-连接可用性以 HTTP 代理访问 `https://api.llm.ustc.edu.cn` 为准。使用 `curl --head --proxy http://127.0.0.1:8888`。HTTP 状态码本身不决定健康状态；只有 DNS、代理连接、TLS 或传输失败才算失败。
+连接可用性以 HTTP 代理访问 `https://api.llm.ustc.edu.cn` 为准。watchdog 使用容器内的命令行 `curl --proxy http://127.0.0.1:8888` 发起与宿主机一致的普通 GET 请求，响应正文会被丢弃。日志会记录 curl 退出码、CONNECT 状态、目标 HTTP 状态和耗时。HTTP 状态码本身不决定健康状态；只有 DNS、代理连接、TLS 或传输失败才算失败。
 
-watchdog 默认每 15 秒检查一次，单次最多等待 10 秒，连续失败两次会自动重建 iWAN 隧道和 3proxy。网络完全失联时，Rust 客户端还会每 5 秒通过 iWAN 协议发送一个很小的 `PT_PING_REQ`，连续丢失 3 个响应后退出当前隧道，通常会比 HTTP 检查更快触发重连。Docker 自身的健康状态每 60 秒检查一次，正常状态每 60 秒记录一条摘要。可以通过环境变量调整：
+watchdog 默认每 15 秒检查一次，单次最多等待 10 秒。从首次 curl 失败开始计时，只有持续 120 秒没有任何成功请求才会重建当前保存的 iWAN 线路和 3proxy；期间任意一次成功都会清空失败窗口。Rust 客户端仍每 5 秒发送一个很小的 `PT_PING_REQ`，连续丢失响应只记录超时和恢复，不再主动退出隧道；服务端 `PT_CLOSE`、进程退出或数据面致命错误仍会立即触发重连。Docker 自身的健康状态只检查本地进程、TUN、路由和监听端口，不受公网请求抖动影响。正常连接每 60 秒记录一条 curl 摘要。可以通过环境变量调整：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---:|---|
 | `IWAN_HEALTHCHECK_URL` | `https://api.llm.ustc.edu.cn` | 端到端代理检查地址。 |
 | `IWAN_HEALTHCHECK_TIMEOUT` | `10` | 单次 HTTP 检查最长秒数。 |
 | `IWAN_WATCHDOG_INTERVAL` | `15` | 两次 HTTP 检查之间的秒数。 |
-| `IWAN_WATCHDOG_RETRIES` | `2` | 触发重连前允许的连续失败次数。 |
+| `IWAN_WATCHDOG_FAILURE_WINDOW` | `120` | HTTP 代理持续失败多久后重建连接，单位为秒。 |
 | `IWAN_RECONNECT_DELAY` | `2` | 重建连接前等待的秒数。 |
 | `IWAN_STATUS_LOG_INTERVAL` | `60` | 正常状态摘要的秒数间隔。 |
 
